@@ -366,7 +366,7 @@ if [[ $TYPE == "Mobile Device Group" ]];then
 			
 			while read -r fname; do
 					if [[ "$OBJECT_SPECIFIC" == "$fname" ]];then
-						/bin/echo "The profile $iOS_PROFILE_NAME has the group $OBJECT_SPECIFIC excluded" >> "${REPORT_PATH}
+						/bin/echo "The profile $iOS_PROFILE_NAME has the group $OBJECT_SPECIFIC excluded" >> "${REPORT_PATH}"
 					fi
 			done <<< "$iOS_EXCLUSION_PROFILE"
 		done
