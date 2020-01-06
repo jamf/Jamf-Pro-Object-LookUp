@@ -2,7 +2,7 @@
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 #
-# Copyright (c) 2019, JAMF Software, LLC.  All rights reserved.
+# Copyright (c) 2020, JAMF Software, LLC.  All rights reserved.
 #
 #       Redistribution and use in source and binary forms, with or without
 #       modification, are permitted provided that the following conditions are met:
@@ -32,8 +32,9 @@
 # 
 # This script is designed to be run that will query the Jamf Pro server and a list of the following
 # 	- objects in a macOS Policy such as Packages, Scripts, and Printers
-# 	- Items a macOS Group is assigned to or excluded from such as Policies, Profiles, Restricted Software and MacOS Apps as well as nested smart groups
-# 	- Itmes a Mobile Device Group is assigned to or excluded from suc as Profiles and Mobile Device Apps as well as nested smart groups
+# 	- packages within a macOS Patch Management Policy
+# 	- Items a macOS Group is assigned to or excluded from such as Policies, Patch Polcies, Profiles, Restricted Software and MacOS Apps as well as nested smart groups
+# 	- Items a Mobile Device Group is assigned to or excluded from such as Profiles and Mobile Device Apps as well as nested smart groups
 #
 #
 #	Once completed there will be a text file on the users desktop in the format of "OBJECT_NAME.day.month.year.txt"
@@ -43,8 +44,11 @@
 # Written by: Daniel MacLaughlin | Implementation Engineer | Jamf
 #
 # Created On: September 19th 2019
-# 
-# version 1.0
+# Updated On: January 6th 2020
+# 	- Added reporting on packages in patch titles
+#  	- Added diaglog prompts that inform when either a report is created or not 
+#
+# version 1.1
 #
 # 
 #
@@ -61,7 +65,7 @@ TIME=$(/bin/date +"%d.%m.%Y")
 SERVERURL=$(/usr/bin/osascript <<EOT 
 tell application "System Events"
 	activate
-	set input to display dialog "Enter JSS Address: NO ENDING SLASH" default answer "https://server.jamfcloud.com"
+	set input to display dialog "Enter JSS Address: NO ENDING SLASH" default answer "https://server.jamfcloud.com" buttons {"Continue"} default button 1
 	return text returned of input as string
 end tell
 EOT
@@ -71,7 +75,7 @@ EOT
 #####Ask for JSS API Username using Apple Script
 APIUSER=$(/usr/bin/osascript <<EOT
 tell application "System Events"
-	set input to display dialog "Enter JSS API Username:" default answer "Username"
+	set input to display dialog "Enter JSS API Username:" default answer "Username" buttons {"Continue"} default button 1
 	return text returned of input as string
 end tell
 EOT
@@ -81,7 +85,7 @@ EOT
 ######Ask for JSS API Password using Apple Script
 APIPASSWORD=$(/usr/bin/osascript <<EOT
 tell application "System Events"
-	set input to display dialog "Enter JSS API password" default answer "Password" with hidden answer
+	set input to display dialog "Enter JSS API password" default answer "Password" with hidden answer buttons {"Continue"} default button 1
 	return text returned of input as string
 end tell
 EOT
@@ -436,7 +440,7 @@ if [[ $TYPE == "Computer" ]];then
 
 MAC_POLICY_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies" | xpath '//policy' 2>&1 | awk -F'<id>|</id>' '{print $2}')
 
-#cycle through id's and upload data
+#cycle through id's and export data
 for id in $MAC_POLICY_ID;do
 
 POLICY_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | xpath '/policy/general/name/text()')
@@ -451,4 +455,42 @@ MAC_POLICY_OBJECTS=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":
 	done <<< "$MAC_POLICY_OBJECTS"
 
 done
+
+#Download from API and provide array of device id's
+/bin/echo "##################### Getting Patch Policies Titles ########################"
+
+MAC_PATCH_TITLE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles" | xpath '//patch_software_title' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+
+#cycle through id's and export data
+for id in $MAC_PATCH_TITLE_ID;do
+	
+MAC_PATCH_TITLE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles/id/$id" | xpath '/patch_software_title/name/text()')
+
+MAC_PATCH_TITLE_OBJECTS=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles/id/$id" | xpath //versions/version/package 2>&1 | awk -F'<name>|</name>' '{print $2}')
+	
+	#Cycle through the Object list and export to Text File
+	while read -r fname; do
+			if [[ "$OBJECT_SPECIFIC" == "$fname" ]];then
+				/bin/echo "The Patch Management title $MAC_PATCH_TITLE_NAME has the $OBJECT_SPECIFIC" >> "${REPORT_PATH}"
+			fi
+	done <<< "$MAC_PATCH_TITLE_OBJECTS"
+done
+
+fi
+
+#Check if a Report was created, if not then the item selected is not a memeber of anything, otherwise display dialog of the report path
+if [ -f ${REPORT_PATH} ];then
+	REPORT_SUCCESS=$(/usr/bin/osascript <<EOT
+	tell application "System Events"
+	display dialog "Report Created at \"$REPORT_PATH\"" with icon note 
+	end tell
+EOT
+)
+	else
+	REPORT_FAILED=$(/usr/bin/osascript <<EOT
+	tell application "System Events"
+	display dialog "\"$OBJECT_SPECIFIC\" Not associated with anything, report not created" with icon caution 
+	end tell
+EOT
+)
 fi
