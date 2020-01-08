@@ -60,6 +60,15 @@ CURRENT_USER=$(/bin/ls -l /dev/console | awk '/ / { print $3 }')
 # Since we like Data we can also do a timestamp this can be modified as dd.mm.yyyy or dd-mm-yyyy
 TIME=$(/bin/date +"%d.%m.%Y")
 
+######Create "/Users/$CURRENT_USER/Desktop/ObjectLookupReports_$TIME/" if it does not already exist
+mkdir -p "/Users/$CURRENT_USER/Desktop/ObjectLookupReports_${TIME}/"
+
+###---Enter Jamf Pro URL Here---###
+SERVERURL=""
+###---Enter Jamf Pro URL Here---###
+
+######Check if SERVERURL is blank and prompt user if it is
+if [[ $SERVERURL = "" ]]; then
 
 #######Ask for JSS Address using Apple Script
 SERVERURL=$(/usr/bin/osascript <<EOT 
@@ -70,7 +79,14 @@ tell application "System Events"
 end tell
 EOT
 )
+fi
 
+###---Enter Jamf Pro API User Here---###
+APIUSER=""
+###---Enter Jamf Pro API User Here---###
+
+######Check if APIUSER is blank and prompt user if it is
+if [[ $APIUSER = "" ]]; then
 
 #####Ask for JSS API Username using Apple Script
 APIUSER=$(/usr/bin/osascript <<EOT
@@ -80,7 +96,7 @@ tell application "System Events"
 end tell
 EOT
 )
-
+fi
 
 ######Ask for JSS API Password using Apple Script
 APIPASSWORD=$(/usr/bin/osascript <<EOT
@@ -91,6 +107,8 @@ end tell
 EOT
 )
 
+######Function to call the script
+call_script () {
 
 #Prompt User for what type of item they want to get more information for ie packages, scripts,
 OBJECT_TYPE=$(/usr/bin/osascript <<EOT
@@ -98,6 +116,10 @@ return choose from list {"Packages", "Scripts", "Printers", "Computer Groups", "
 EOT
 )
 
+######Check if user selected "Cancel" and exit if true
+if [[ $OBJECT_TYPE = "false" ]]; then
+	exit 0
+fi
 
 #This is to replace the space with underscore for XML parsing in stylsheet
 OBJECT_TYPE_ALTERED=$(/bin/echo $OBJECT_TYPE | tr '[:upper:]' '[:lower:]'| sed 's/ /_/g'  | sed 's/.\{1\}$//')
@@ -147,8 +169,13 @@ OBJECT_SPECIFIC=$(/usr/bin/osascript <<EOT
 EOT
 )
 
+######Check if user selected "Cancel" and exit if true
+if [[ $OBJECT_SPECIFIC = "false" ]]; then
+	exit 0
+fi
+
 #Report Path as Variable
-REPORT_RAW="/Users/$CURRENT_USER/Desktop/${OBJECT_SPECIFIC}.${TIME}.txt"
+REPORT_RAW="/Users/$CURRENT_USER/Desktop/ObjectLookupReports_$TIME/${OBJECT_SPECIFIC}.${TIME}.txt"
 #Removing any spaces from the path for export
 REPORT_PATH=$(echo $REPORT_RAW | sed -e 's/ /_/g')
 
@@ -486,6 +513,12 @@ if [ -f ${REPORT_PATH} ];then
 	end tell
 EOT
 )
+		######Check if user selected "Ok" and continue if true
+		if [[ $REPORT_SUCCESS = "button returned:OK" ]]; then
+			call_script
+		else
+			exit 0
+		fi
 	else
 	REPORT_FAILED=$(/usr/bin/osascript <<EOT
 	tell application "System Events"
@@ -493,4 +526,13 @@ EOT
 	end tell
 EOT
 )
+		######Check if user selected "Ok" and continue if true
+		if [[ $REPORT_FAILED = "button returned:OK" ]]; then
+			call_script
+		else
+			exit 0
+		fi
 fi
+}
+#Calling the call_script function
+call_script
