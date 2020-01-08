@@ -48,7 +48,7 @@
 # 	- Added reporting on packages in patch titles
 #  	- Added diaglog prompts that inform when either a report is created or not 
 #
-# version 1.1
+# version 1.2 Additions added by PJDunand
 #
 # 
 #
