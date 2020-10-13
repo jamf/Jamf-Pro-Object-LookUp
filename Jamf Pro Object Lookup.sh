@@ -46,10 +46,12 @@
 # Created On: September 19th 2019
 # Updated On: January 6th 2020
 # 	- Added reporting on packages in patch titles
-#  	- Added diaglog prompts that inform when either a report is created or not 
+#  	- Added diaglog prompts that inform when either a report is created or not
 #
-# version 1.2 Additions added by PJDunand
+# Updated On: October 13th 2020
+#	- Changed osascript prompts to not require PPPC
 #
+# version 1.3
 # 
 #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
@@ -72,11 +74,8 @@ if [[ $SERVERURL = "" ]]; then
 
 #######Ask for JSS Address using Apple Script
 SERVERURL=$(/usr/bin/osascript <<EOT 
-tell application "System Events"
-	activate
-	set input to display dialog "Enter JSS Address: NO ENDING SLASH" default answer "https://server.jamfcloud.com" buttons {"Continue"} default button 1
-	return text returned of input as string
-end tell
+set input to display dialog "Enter JSS Address: NO ENDING SLASH" default answer "https://server.jamfcloud.com" buttons {"Continue"} default button 1
+return text returned of input as string
 EOT
 )
 fi
@@ -90,20 +89,16 @@ if [[ $APIUSER = "" ]]; then
 
 #####Ask for JSS API Username using Apple Script
 APIUSER=$(/usr/bin/osascript <<EOT
-tell application "System Events"
-	set input to display dialog "Enter JSS API Username:" default answer "Username" buttons {"Continue"} default button 1
-	return text returned of input as string
-end tell
+set input to display dialog "Enter JSS API Username:" default answer "Username" buttons {"Continue"} default button 1
+return text returned of input as string
 EOT
 )
 fi
 
 ######Ask for JSS API Password using Apple Script
 APIPASSWORD=$(/usr/bin/osascript <<EOT
-tell application "System Events"
-	set input to display dialog "Enter JSS API password" default answer "Password" with hidden answer buttons {"Continue"} default button 1
-	return text returned of input as string
-end tell
+set input to display dialog "Enter JSS API password" default answer "Password" with hidden answer buttons {"Continue"} default button 1
+return text returned of input as string
 EOT
 )
 
@@ -153,19 +148,17 @@ OBJECT_LIST=$(/usr/bin/curl -u "$APIUSER:$APIPASSWORD" -H "Accept: application/x
 
 #display to the user the list of specific objects referencing the text file from the list
 OBJECT_SPECIFIC=$(/usr/bin/osascript <<EOT
-	tell application "System Events"
-		with timeout of 43200 seconds
-			activate
-			set ObjectList to {}
-			set ObjectFile to paragraphs of (read POSIX file "/tmp/object_list.txt")
-			repeat with i in ObjectFile
-				if length of i is greater than 0 then
-					copy i to the end of ObjectList
-				end if
-			end repeat
-			choose from list ObjectList with title "Which Object" with prompt "Please select the Object you'd like to find out about:"
-		end timeout
-	end tell
+	with timeout of 43200 seconds
+		activate
+		set ObjectList to {}
+		set ObjectFile to paragraphs of (read POSIX file "/tmp/object_list.txt")
+		repeat with i in ObjectFile
+			if length of i is greater than 0 then
+				copy i to the end of ObjectList
+			end if
+		end repeat
+		choose from list ObjectList with title "Which Object" with prompt "Please select the Object you'd like to find out about:"
+	end timeout
 EOT
 )
 
@@ -508,9 +501,7 @@ fi
 #Check if a Report was created, if not then the item selected is not a memeber of anything, otherwise display dialog of the report path
 if [ -f ${REPORT_PATH} ];then
 	REPORT_SUCCESS=$(/usr/bin/osascript <<EOT
-	tell application "System Events"
-	display dialog "Report Created at \"$REPORT_PATH\"" with icon note 
-	end tell
+display dialog "Report Created at \"$REPORT_PATH\"" with icon note 
 EOT
 )
 		######Check if user selected "Ok" and continue if true
@@ -521,9 +512,7 @@ EOT
 		fi
 	else
 	REPORT_FAILED=$(/usr/bin/osascript <<EOT
-	tell application "System Events"
-	display dialog "\"$OBJECT_SPECIFIC\" Not associated with anything, report not created" with icon caution 
-	end tell
+display dialog "\"$OBJECT_SPECIFIC\" Not associated with anything, report not created" with icon caution 
 EOT
 )
 		######Check if user selected "Ok" and continue if true
