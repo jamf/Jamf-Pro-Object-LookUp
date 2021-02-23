@@ -2,7 +2,7 @@
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 #
-# Copyright (c) 2020, JAMF Software, LLC.  All rights reserved.
+# Copyright (c) 2021, JAMF Software, LLC.  All rights reserved.
 #
 #       Redistribution and use in source and binary forms, with or without
 #       modification, are permitted provided that the following conditions are met:
@@ -51,19 +51,23 @@
 # Updated On: October 13th 2020
 #	- Changed osascript prompts to not require PPPC
 #
-# version 1.3
+# Updated On: February 23rd 2021
+#	- Added support for macOs Big Sur
+#	- specified path to binary calls eg mkdir change to /bin/mkdir
+#
+# version 1.4
 # 
 #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
 #Lets get the current User so we can store the report on their Desktop
-CURRENT_USER=$(/bin/ls -l /dev/console | awk '/ / { print $3 }')
+CURRENT_USER=$(/bin/ls -l /dev/console | /usr/bin/awk '/ / { print $3 }')
 
 # Since we like Data we can also do a timestamp this can be modified as dd.mm.yyyy or dd-mm-yyyy
 TIME=$(/bin/date +"%d.%m.%Y")
 
 ######Create "/Users/$CURRENT_USER/Desktop/ObjectLookupReports_$TIME/" if it does not already exist
-mkdir -p "/Users/$CURRENT_USER/Desktop/ObjectLookupReports_${TIME}/"
+/bin/mkdir -p "/Users/$CURRENT_USER/Desktop/ObjectLookupReports_${TIME}/"
 
 ###---Enter Jamf Pro URL Here---###
 SERVERURL=""
@@ -105,6 +109,13 @@ EOT
 ######Function to call the script
 call_script () {
 
+#checking if macOS Big Sur
+if [[ $(/usr/bin/sw_vers -buildVersion) > "20A" ]]; then
+	XPATH_COMMAND="/usr/bin/xpath -e"
+else
+	XPATH_COMMAND="/usr/bin/xpath"
+fi
+
 #Prompt User for what type of item they want to get more information for ie packages, scripts,
 OBJECT_TYPE=$(/usr/bin/osascript <<EOT
 return choose from list {"Packages", "Scripts", "Printers", "Computer Groups", "Mobile Device Groups"}
@@ -117,11 +128,11 @@ if [[ $OBJECT_TYPE = "false" ]]; then
 fi
 
 #This is to replace the space with underscore for XML parsing in stylsheet
-OBJECT_TYPE_ALTERED=$(/bin/echo $OBJECT_TYPE | tr '[:upper:]' '[:lower:]'| sed 's/ /_/g'  | sed 's/.\{1\}$//')
+OBJECT_TYPE_ALTERED=$(/bin/echo $OBJECT_TYPE | /usr/bin/tr '[:upper:]' '[:lower:]'| /usr/bin/sed 's/ /_/g'  | /usr/bin/sed 's/.\{1\}$//')
 
 
 #This is to remove the upper case and spaces from the choice list for api calls
-OBJECT_TYPE_MODIFIED=$(/bin/echo $OBJECT_TYPE | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+OBJECT_TYPE_MODIFIED=$(/bin/echo $OBJECT_TYPE | /usr/bin/tr '[:upper:]' '[:lower:]' | /usr/bin/tr -d '[:space:]')
 
 
 
@@ -144,7 +155,7 @@ EOF
 EOL
 
 # using the export the list using stylesheet to be a text file to be used for the next display prompt
-OBJECT_LIST=$(/usr/bin/curl -u "$APIUSER:$APIPASSWORD" -H "Accept: application/xml" "$SERVERURL/JSSResource/$OBJECT_TYPE_MODIFIED" | xsltproc /tmp/stylesheet.xslt - > /tmp/object_list.txt)
+OBJECT_LIST=$(/usr/bin/curl -u "$APIUSER:$APIPASSWORD" -H "Accept: application/xml" "$SERVERURL/JSSResource/$OBJECT_TYPE_MODIFIED" | /usr/bin/xsltproc /tmp/stylesheet.xslt - > /tmp/object_list.txt)
 
 #display to the user the list of specific objects referencing the text file from the list
 OBJECT_SPECIFIC=$(/usr/bin/osascript <<EOT
@@ -170,7 +181,7 @@ fi
 #Report Path as Variable
 REPORT_RAW="/Users/$CURRENT_USER/Desktop/ObjectLookupReports_$TIME/${OBJECT_SPECIFIC}.${TIME}.txt"
 #Removing any spaces from the path for export
-REPORT_PATH=$(echo $REPORT_RAW | sed -e 's/ /_/g')
+REPORT_PATH=$(/bin/echo $REPORT_RAW | /usr/bin/sed -e 's/ /_/g')
 
 #xpath variable based on the object type to update the xpath path along with type to seperate between object, computer group and mobile group
 if [[ $OBJECT_TYPE == "Packages" ]];then
@@ -203,15 +214,15 @@ if [[ $TYPE == "Computer Group" ]];then
 	/bin/echo "##################### Getting Policy Groups ########################"
 	
 	#Get an array of policy id's
-	MAC_POLICY_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies" | xpath '//policy' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+	MAC_POLICY_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies" | $XPATH_COMMAND  '//policy' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 	#cycle through each policy id to get name and scopes
 	for id in $MAC_POLICY_ID;do
 		#Get the Polcy Name for the Report
-		POLICY_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | xpath '/policy/general/name/text()')
+		POLICY_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | $XPATH_COMMAND  '/policy/general/name/text()')
 		#Get the Scope of the policy as an array
-		MAC_SCOPE_POLICY=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		MAC_SCOPE_POLICY=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 		#Get the Exclusion scope as an array
-		MAC_EXCLUSION_POLICY=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | xpath $XPATH_EXCLUSION_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		MAC_EXCLUSION_POLICY=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | $XPATH_COMMAND  $XPATH_EXCLUSION_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 			#Check to see if the group is in the scope and if so write to text file
 			while read -r fname; do
 					if [[ "$OBJECT_SPECIFIC" == "$fname" ]];then
@@ -228,16 +239,16 @@ if [[ $TYPE == "Computer Group" ]];then
 		
 		/bin/echo "##################### Getting macOS Profile Groups ########################"
 		#get macOS profile id's an array
-		MAC_PROFILE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles" | xpath '//os_x_configuration_profile' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+		MAC_PROFILE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles" | $XPATH_COMMAND  '//os_x_configuration_profile' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 		
 		#Cycle through profile ID's to get name and scope
 		for id in $MAC_PROFILE_ID;do
 			#get Profile Name
-			PROFILE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles/id/$id" | xpath '/os_x_configuration_profile/general/name/text()')
+			PROFILE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles/id/$id" | $XPATH_COMMAND  '/os_x_configuration_profile/general/name/text()')
 			#Get the scope of groups as an array 
-			MAC_SCOPE_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles/id/$id" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+			MAC_SCOPE_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles/id/$id" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 			#Get the Exclusion list of groups for the profile
-			MAC_EXCLUSION_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles/id/$id" | xpath $XPATH_EXCLUSION_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+			MAC_EXCLUSION_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/osxconfigurationprofiles/id/$id" | $XPATH_COMMAND  $XPATH_EXCLUSION_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 			
 				#Cycle through the Scoped groups to see if it matches the object if so export to text file
 				while read -r fname; do
@@ -255,18 +266,18 @@ if [[ $TYPE == "Computer Group" ]];then
 
 			/bin/echo "##################### Getting Patch Policy Groups ########################"
 			#Get macOS restricted software id's as an array
-			MAC_PATCH_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies" | xpath '//patch_policy' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+			MAC_PATCH_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies" | $XPATH_COMMAND  '//patch_policy' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 
 			#Cycle through the id's to get Name and Scope
 			for id in $MAC_PATCH_ID;do
 				#Get restricted software app name
-				MAC_PATCH_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies/id/$id" | xpath '/patch_policy/general/name/text()')
+				MAC_PATCH_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies/id/$id" | $XPATH_COMMAND  '/patch_policy/general/name/text()')
 
 				#Get the scope of the restricted software app as an array
-				MAC_SCOPE_PATCH=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies/id/$id/subset/Scope" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+				MAC_SCOPE_PATCH=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies/id/$id/subset/Scope" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 				
 				#Get the exclusion scope of the restricted app as an array 
-				MAC_EXCLUDED_PATCH=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies/id/$id/subset/Scope" | xpath $XPATH_EXCLUSION_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+				MAC_EXCLUDED_PATCH=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchpolicies/id/$id/subset/Scope" | $XPATH_COMMAND  $XPATH_EXCLUSION_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 				
 					#cycle through the list of groups and if it matches export to text file
 					while read -r fname; do
@@ -285,15 +296,15 @@ if [[ $TYPE == "Computer Group" ]];then
 	
 	/bin/echo "##################### Getting macOS Restriction Groups ########################"
 	#Get macOS restricted software id's as an array
-	MAC_RESTRICTED_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware" | xpath '//restricted_software_title' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+	MAC_RESTRICTED_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware" | $XPATH_COMMAND  '//restricted_software_title' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 	#Cycle through the id's to get Name and Scope
 	for id in $MAC_RESTRICTED_ID;do
 		#Get restricted software app name
-		RESTRICTED_APP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware/id/$id" | xpath '/restricted_software/general/name/text()')
+		RESTRICTED_APP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware/id/$id" | $XPATH_COMMAND  '/restricted_software/general/name/text()')
 		#Get the scope of the restricted software app as an array
-		MAC_SCOPE_RESTRICTED_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware/id/$id" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		MAC_SCOPE_RESTRICTED_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware/id/$id" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 		#Get the exclusion scope of the restricted app as an array 
-		MAC_EXCLUDED_RESTRICTED_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware/id/$id" | xpath $XPATH_EXCLUSION_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		MAC_EXCLUDED_RESTRICTED_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/restrictedsoftware/id/$id" | $XPATH_COMMAND  $XPATH_EXCLUSION_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 		
 			#cycle through the list of groups and if it matches export to text file
 			while read -r fname; do
@@ -313,15 +324,15 @@ if [[ $TYPE == "Computer Group" ]];then
 
 		/bin/echo "##################### Getting macOS App Store App Groups ########################"
 		#Get macOS App Store id's as an array
-		MAC_APPSTORE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications" | xpath '//mac_application' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+		MAC_APPSTORE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications" | $XPATH_COMMAND  '//mac_application' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 		#Cycle through the id's getting the Name, and Scope
 		for id in $MAC_APPSTORE_ID;do
 			#Get the macOS App Name
-			MAC_APPSTORE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications/id/$id" | xpath '/mac_application/general/name/text()')
+			MAC_APPSTORE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications/id/$id" | $XPATH_COMMAND  '/mac_application/general/name/text()')
 			#Get the macOS App Store Scope
-			MAC_SCOPE_APPSTORE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications/id/$id" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+			MAC_SCOPE_APPSTORE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications/id/$id" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 			#Get the macOS App Store Excluded Scope
-			MAC_EXCLUSION_APPSTORE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications/id/$id" | xpath $XPATH_EXCLUSION_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+			MAC_EXCLUSION_APPSTORE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/macapplications/id/$id" | $XPATH_COMMAND  $XPATH_EXCLUSION_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 			
 				#Cycle through scope list to see if it matches and if found will export to text file
 				while read -r fname; do
@@ -340,19 +351,19 @@ if [[ $TYPE == "Computer Group" ]];then
 
 			/bin/echo "##################### Getting Smart Groups ########################"
 			#Get an array of group id's
-			MAC_GROUP_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups" | xpath '//computer_group' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+			MAC_GROUP_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups" | $XPATH_COMMAND  '//computer_group' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 			#cycle through each group id to get name and if member of a smart group
 			for id in $MAC_GROUP_ID;do
 				#Get the Group Name for the Report
-				GROUP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups/id/$id" | xpath '/computer_group/name/text()')
+				GROUP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups/id/$id" | $XPATH_COMMAND  '/computer_group/name/text()')
 				
 				#get subset of groups that have "Computer Group" as criteria
-				GROUP_CRITERIA_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups/id/$id" | xpath /computer_group/criteria/criterion/name 2>&1 | awk -F'<name>|</name>' '{print $2}')
+				GROUP_CRITERIA_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups/id/$id" | $XPATH_COMMAND  /computer_group/criteria/criterion/name 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 				#Cycle though the array of smart groups with "Computer Group as criteria
 				while read -r fname; do
 						if [[ "$fname" == "Computer Group" ]];then
 						#Get the value of the Computer Group Criteria to see if it matches
-						GROUP_CRITERIA_VALUE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups/id/$id" | xpath /computer_group/criteria/criterion/value 2>&1 | awk -F'<value>|</value>' '{print $2}')
+						GROUP_CRITERIA_VALUE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/computergroups/id/$id" | $XPATH_COMMAND  /computer_group/criteria/criterion/value 2>&1 | /usr/bin/awk -F'<value>|</value>' '{print $2}')
 							while read -r fname; do
 									if [[ "$fname" == "$OBJECT_SPECIFIC" ]];then
 							
@@ -370,15 +381,15 @@ if [[ $TYPE == "Mobile Device Group" ]];then
 
 	/bin/echo "##################### Getting Mobile Profile Groups ########################"
 	#Get iOS profile id's as an array
-	iOS_PROFILE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles" | xpath '//configuration_profile' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+	iOS_PROFILE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles" | $XPATH_COMMAND  '//configuration_profile' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 	#Cycle through the ids to get profile name and scope
 	for id in $iOS_PROFILE_ID;do
 		#get the Profile name
-		iOS_PROFILE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles/id/$id" | xpath '/configuration_profile/general/name/text()')
+		iOS_PROFILE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles/id/$id" | $XPATH_COMMAND  '/configuration_profile/general/name/text()')
 		#Get the iOS Scope as an array
-		iOS_SCOPE_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles/id/$id" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		iOS_SCOPE_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles/id/$id" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 		#Get the iOS Profile exclusions as an array
-		iOS_EXCLUSION_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles/id/$id" | xpath $XPATH_EXCLUSION_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		iOS_EXCLUSION_PROFILE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceconfigurationprofiles/id/$id" | $XPATH_COMMAND  $XPATH_EXCLUSION_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 			
 			#Cycle through array and if the group matches export to text file
 			while read -r fname; do
@@ -398,15 +409,15 @@ if [[ $TYPE == "Mobile Device Group" ]];then
 	
 	/bin/echo "##################### Getting Mobile App Groups ########################"
 	#Get iOS AppStore ID's
-	iOS_APP_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications" | xpath '//mobile_device_application' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+	iOS_APP_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications" | $XPATH_COMMAND  '//mobile_device_application' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 	#Cycle through app store id's to get Name and Scope
 	for id in $iOS_APP_ID;do
 		#Get iOS App Name
-		iOS_APP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications/id/$id" | xpath '/mobile_device_application/general/name/text()')
+		iOS_APP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications/id/$id" | $XPATH_COMMAND  '/mobile_device_application/general/name/text()')
 		#Get iOS Scope as an array
-		iOS_SCOPE_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications/id/$id" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		iOS_SCOPE_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications/id/$id" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 		#iOS Exclusion scope as array
-		iOS_EXCLUSION_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications/id/$id" | xpath $XPATH_EXCLUSION_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+		iOS_EXCLUSION_APP=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledeviceapplications/id/$id" | $XPATH_COMMAND  $XPATH_EXCLUSION_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 		
 			#Cycle through the array and if it matches export to text file
 			while read -r fname; do
@@ -425,20 +436,20 @@ if [[ $TYPE == "Mobile Device Group" ]];then
 		
 		/bin/echo "##################### Getting Mobile Device Smart Groups ########################"
 		#Get an array of group id's
-		iOS_GROUP_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups" | xpath '//mobile_device_group' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+		iOS_GROUP_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups" | $XPATH_COMMAND  '//mobile_device_group' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 		#cycle through each group id to get name and if member of a smart group
 		for id in $iOS_GROUP_ID;do
 			#Get the Group Name for the Report
-			GROUP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups/id/$id" | xpath '/mobile_device_group/name/text()')
+			GROUP_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups/id/$id" | $XPATH_COMMAND  '/mobile_device_group/name/text()')
 			
 			#get subset of groups that have "Computer Group" as criteria
-			GROUP_CRITERIA_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups/id/$id" | xpath /mobile_device_group/criteria/criterion/name 2>&1 | awk -F'<name>|</name>' '{print $2}')
+			GROUP_CRITERIA_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups/id/$id" | $XPATH_COMMAND  /mobile_device_group/criteria/criterion/name 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 
 			#Cycle though the array of smart groups with "Mobile Device Group as criteria
 			while read -r fname; do
 					if [[ "$fname" == "Mobile Device Group" ]];then
 					#Get the value of the Mobile Device Group Criteria to see if it matches
-					GROUP_CRITERIA_VALUE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups/id/$id" | xpath /mobile_device_group/criteria/criterion/value 2>&1 | awk -F'<value>|</value>' '{print $2}')
+					GROUP_CRITERIA_VALUE=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/mobiledevicegroups/id/$id" | $XPATH_COMMAND  /mobile_device_group/criteria/criterion/value 2>&1 | /usr/bin/awk -F'<value>|</value>' '{print $2}')
 
 						while read -r fname; do
 								if [[ "$fname" == "$OBJECT_SPECIFIC" ]];then
@@ -458,14 +469,14 @@ if [[ $TYPE == "Computer" ]];then
 #Download from API and provide array of device id's
 /bin/echo "##################### Getting Policies ########################"
 
-MAC_POLICY_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies" | xpath '//policy' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+MAC_POLICY_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies" | $XPATH_COMMAND  '//policy' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 
 #cycle through id's and export data
 for id in $MAC_POLICY_ID;do
 
-POLICY_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | xpath '/policy/general/name/text()')
+POLICY_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | $XPATH_COMMAND  '/policy/general/name/text()')
 
-MAC_POLICY_OBJECTS=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | xpath $XPATH_VARIABLE 2>&1 | awk -F'<name>|</name>' '{print $2}')
+MAC_POLICY_OBJECTS=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/policies/id/$id" | $XPATH_COMMAND  $XPATH_VARIABLE 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 	
 	#Cycle through the Object list and export to Text File
 	while read -r fname; do
@@ -479,14 +490,14 @@ done
 #Download from API and provide array of device id's
 /bin/echo "##################### Getting Patch Policies Titles ########################"
 
-MAC_PATCH_TITLE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles" | xpath '//patch_software_title' 2>&1 | awk -F'<id>|</id>' '{print $2}')
+MAC_PATCH_TITLE_ID=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles" | $XPATH_COMMAND  '//patch_software_title' 2>&1 | /usr/bin/awk -F'<id>|</id>' '{print $2}')
 
 #cycle through id's and export data
 for id in $MAC_PATCH_TITLE_ID;do
 	
-MAC_PATCH_TITLE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles/id/$id" | xpath '/patch_software_title/name/text()')
+MAC_PATCH_TITLE_NAME=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles/id/$id" | $XPATH_COMMAND  '/patch_software_title/name/text()')
 
-MAC_PATCH_TITLE_OBJECTS=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles/id/$id" | xpath //versions/version/package 2>&1 | awk -F'<name>|</name>' '{print $2}')
+MAC_PATCH_TITLE_OBJECTS=$(/usr/bin/curl -H "Accept: application/xml" -sku "$APIUSER":"$APIPASSWORD" "$SERVERURL/JSSResource/patchsoftwaretitles/id/$id" | $XPATH_COMMAND  //versions/version/package 2>&1 | /usr/bin/awk -F'<name>|</name>' '{print $2}')
 	
 	#Cycle through the Object list and export to Text File
 	while read -r fname; do
